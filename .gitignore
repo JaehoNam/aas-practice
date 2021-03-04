@@ -158,4 +158,7 @@ gradle-app.setting
 ### Gradle Patch ###
 **/build/
 
+### Dataset ###
+ds
+
 # End of https://www.toptal.com/developers/gitignore/api/scala,intellij,macos,gradle
