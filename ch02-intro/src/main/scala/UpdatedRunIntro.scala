@@ -26,7 +26,7 @@ object RunIntro extends Serializable {
       .option("header", "true")
       .option("nullValue", "?")
       .option("inferSchema", "true")
-      .csv("hdfs://localhost:9000/ch02/linkage")
+      .csv("hdfs://localhost:9000/aas/ch02/ds")
 
     parsed.cache()
 
