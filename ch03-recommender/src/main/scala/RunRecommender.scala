@@ -268,7 +268,8 @@ class RunRecommender(private val spark: SparkSession) {
       val Array(userID, artistID, count) = line.split(' ').map(_.toInt)
       val finalArtistID = bArtistAlias.value.getOrElse(artistID, artistID)
       (userID, finalArtistID, count)
-    }.toDF("user", "artist", "count")
+    }.toDF("user", "artist", "count").
+      groupBy("user", "artist").agg(sum("count").as("count"))
   }
 
   /**
