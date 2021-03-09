@@ -1,13 +1,12 @@
-import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.classification.{DecisionTreeClassifier, RandomForestClassificationModel, RandomForestClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
-import org.apache.spark.ml.linalg.Vector
 import org.apache.spark.ml.feature.{VectorAssembler, VectorIndexer}
+import org.apache.spark.ml.linalg.Vector
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
+import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
-import org.apache.spark.sql.functions.udf
-import org.apache.spark.sql.types.{DataType, DoubleType}
-import org.apache.spark.sql.{Column, ColumnName, DataFrame, SparkSession}
+import org.apache.spark.sql.functions.{sqrt, udf}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import scala.util.Random
 
@@ -54,7 +53,8 @@ object RunRDF {
     // runRDF.randomClassifier(trainData, testData)
     // runRDF.evaluate(trainData, testData)
     // runRDF.evaluateCategorical(trainData, testData)
-    runRDF.evaluateForest(trainData, testData)
+    // runRDF.evaluateForest(trainData, testData)
+    runRDF.evaluateForestWithProducedColumns(trainData, testData)
   }
 
 }
@@ -378,6 +378,93 @@ class RunRDF(private val spark: SparkSession) {
     // prediction
     unencTestData.select("Cover_Type").show()
     bestModel.transform(unencTestData.drop("Cover_Type")).select("prediction").show()
+  }
+
+  /**
+   * Hydrology 까지의 직선 거리를 column 에 추가
+   */
+  def produceColumn(data: DataFrame): DataFrame = {
+    val hDist = "Horizontal_Distance_To_Hydrology"
+    val vDist = "Vertical_Distance_To_Hydrology"
+
+    val distToHydroCols = Array(hDist, vDist)
+
+    data.withColumn("distToHydro", sqrt($"$hDist" * $"$hDist" + $"$vDist" * $"$vDist")).
+      drop(distToHydroCols:_*)
+  }
+
+  def evaluateForestWithProducedColumns(trainData: DataFrame, testData: DataFrame): Unit = {
+    val unencTrainData = unencodeOneHot(trainData)
+    val unencTestData = unencodeOneHot(testData)
+
+    val prodTrainData = produceColumn(unencTrainData)
+    val prodTestData = produceColumn(unencTestData)
+
+    // pipeline 만들기
+    val inputCols = prodTrainData.columns.filter(_ != "Cover_Type")
+    val assembler = new VectorAssembler().
+      setInputCols(inputCols).
+      setOutputCol("featureVector")
+
+    val indexer = new VectorIndexer().
+      setMaxCategories(40).
+      setInputCol("featureVector").
+      setOutputCol("indexedVector")
+
+    val classifier = new RandomForestClassifier().
+      setSeed(Random.nextLong()).
+      setLabelCol("Cover_Type").
+      setFeaturesCol("indexedVector").
+      setPredictionCol("prediction").
+      setImpurity("entropy").
+      setMaxDepth(20).
+      setMaxBins(300)
+
+    val pipeline = new Pipeline().setStages(Array(assembler, indexer, classifier))
+
+    // hyperparameter 조합 만들기
+    val paramGrid = new ParamGridBuilder().
+      addGrid(classifier.minInfoGain, Seq(0.0, 0.05)).
+      addGrid(classifier.numTrees, Seq(1, 10)).
+      build()
+
+    // evaluator 만들기
+    val multiclassEval = new MulticlassClassificationEvaluator().
+      setLabelCol("Cover_Type").
+      setPredictionCol("prediction").
+      setMetricName("accuracy")
+
+    // validator 만들고 최적 hyperparameter 찾기
+    val validator = new TrainValidationSplit().
+      setSeed(Random.nextLong()).
+      setEstimator(pipeline).
+      setEvaluator(multiclassEval).
+      setEstimatorParamMaps(paramGrid).
+      setTrainRatio(0.9)
+
+    val validatorModel = validator.fit(prodTrainData)
+
+    // 최적 모델의 param map 출력해보기
+    val bestModel = validatorModel.bestModel
+
+    val forestModel = bestModel.asInstanceOf[PipelineModel].
+      stages.last.asInstanceOf[RandomForestClassificationModel]
+
+    println(forestModel.extractParamMap)
+    println(forestModel.getNumTrees)
+    forestModel.featureImportances.toArray.zip(inputCols).
+      sorted.reverse.foreach(println)
+
+    // train accuracy 를 출력해보고 overfitting 이 있었는지 확인하기
+    val testAccuracy = multiclassEval.evaluate(bestModel.transform(prodTestData))
+    println(testAccuracy)
+
+    val trainAccuracy = multiclassEval.evaluate(bestModel.transform(prodTrainData))
+    println(trainAccuracy)
+
+    // prediction
+    prodTestData.select("Cover_Type").show()
+    bestModel.transform(prodTestData.drop("Cover_Type")).select("prediction").show()
   }
 
 }
