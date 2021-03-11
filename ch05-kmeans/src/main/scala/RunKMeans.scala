@@ -313,10 +313,15 @@ class RunKMeans(private val spark: SparkSession) {
     val clustered = pipelineModel.transform(data)
 
     // 100 번째로 centroid 에서 거리가 먼 경우의 거리를 threshold 로 잡음
-    val threshold = clustered.
+    val dists = clustered.
       select("cluster", "scaledFeatureVector").as[(Int, Vector)].
       map { case (cluster, vec) => Vectors.sqdist(centroids(cluster), vec) }.
-      orderBy($"value".desc).take(100).last
+      orderBy($"value".desc)
+
+    val threshold = dists.take(100).last
+    println(threshold)
+
+    dists.describe().show()
 
     // 이상치 출력해보기
     val originalCols = data.columns
