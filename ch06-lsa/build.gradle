@@ -1,0 +1,40 @@
+plugins {
+    id 'scala'
+    id 'idea'
+    id 'com.github.johnrengelman.shadow' version '5.2.0'
+}
+
+group 'net.jaehonam'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven {
+        url "https://repository.cloudera.com/artifactory/libs-release-local"
+    }
+    maven {
+        url "https://repository.cloudera.com/artifactory/ext-release-local"
+    }
+}
+
+dependencies {
+    implementation group: 'org.scala-lang', name: 'scala-library', version: '2.12.13'
+    implementation group: 'edu.umd', name: 'cloud9', version: '2.0.1'
+    implementation group: 'edu.stanford.nlp', name: 'stanford-corenlp', version: '3.9.2'
+    implementation group: 'edu.stanford.nlp', name: 'stanford-corenlp', version: '3.9.2', classifier: 'models'
+    implementation group: 'info.bliki.wiki', name: 'bliki-core', version: '3.1.0'
+    implementation group: 'org.apache.hadoop', name: 'hadoop-client', version: '3.2.2'
+    implementation group: 'org.apache.spark', name: 'spark-sql_2.12', version: '3.1.1'
+    compileOnly group: 'org.apache.spark', name: 'spark-mllib_2.12', version: '3.1.1'
+}
+
+shadowJar {
+    zip64 true
+}
+
+jar {
+    finalizedBy shadowJar
+    manifest {
+        attributes 'Main-Class': 'RunLSA'
+    }
+}
